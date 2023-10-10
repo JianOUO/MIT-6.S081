@@ -2,53 +2,57 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 
-void source() {
-    int i;
-    for(i = 2; i <= 35; i++) {
-        write(1, &i, sizeof(i));
-    }
-}
-
-void redirect(int n, int *fd) {
-    close(n);
-    dup(fd[n]);
-    close(fd[0]);
-    close(fd[1]);
-}
-
-void cull(int prime) {
-    int number;
-    while(read(0, &number, sizeof(number)) == sizeof(number)) {
-        if (number % prime != 0) {
-            write(1, &number, sizeof(number));
-        }
-    }
-}
-
-void sink() {
-    int prime;
-    int fd[2];    
-    while (read(0, &prime, sizeof(prime)) == sizeof(prime)) {
+void nextprocess(int *left) {
+    close(left[1]);
+    int right[2], prime, pid;
+    if(read(left[0], &prime, sizeof(prime))) {
         printf("prime %d\n", prime);
-        pipe(fd);
-        if (fork()) {
-            redirect(0, fd);
-        } else {
-            redirect(1, fd);
-            cull(prime);
+    } else {
+        exit(0);
+    }
+    pipe(right);
+    if ((pid = fork()) < 0) {
+        fprintf(2, "fork failed\n");
+        close(right[0]);
+        close(right[1]);
+        exit(1);
+    } else if (pid > 0) {
+        int temp;
+        close(right[0]);
+        while(read(left[0], &temp, sizeof(temp))) {
+            if (temp % prime) {
+                write(right[1], &temp, sizeof(temp));
+            }
         }
+        close(left[0]);
+        close(right[1]);
+        wait(0);
+        exit(0);
+    } else {
+        nextprocess(right);
+        exit(0);
     }
 }
 
-int main(int argc, char *argv[]) {
-    int fd[2];
-    pipe(fd);
-    if (fork()) {
-        redirect(0, fd);
-        sink();
+int main(int argc, char* argv[]) {
+    int right[2], pid;
+    pipe(right);
+    if ((pid = fork()) < 0) {
+        fprintf(2, "fork failed\n");
+        close(right[0]);
+        close(right[1]);
+        exit(1);
+    } else if (pid > 0) {
+        close(right[0]);
+        for(int i = 2; i <= 35; i++) {
+            write(right[1], &i, sizeof(i));
+        }
+        close(right[1]);
+        wait(0);
+        exit(0);
     } else {
-        redirect(1, fd);
-        source();
+        nextprocess(right);
+        exit(0);
     }
-    exit(0);
+    return 0;
 }
